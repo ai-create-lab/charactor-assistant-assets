@@ -1,0 +1,21 @@
+{
+	"manifest_version": 1,
+	"assets": [
+		{
+			"id": "tts_miotts_0.6b",
+			"url": "https://github.com/ai-create-lab/charactor-assistant-assets/releases/download/v1.0.0/MioTTS-0.6B-Q4_0.gguf",
+			"dest": "models/MioTTS-0.6B-Q4_0.gguf",
+			"version": "1.0.0",
+			"size": 392375968,
+			"sha256": "ebd87bc3cc8a9fb4f7d9dd85d24bc790d2202e569b33905115fc28c89c5dd953"
+		},
+		{
+			"id": "character_manuka",
+			"url": "https://github.com/ai-create-lab/charactor-assistant-assets/releases/download/v1.0.0/MANUKA.vrm",
+			"dest": "characters/MANUKA.vrm",
+			"version": "1.0.0",
+			"size": 165135100,
+			"sha256": "8fd9412773fa017aa3592791aacc07a674586777c57290fe56f7b04c4265a377"
+		}
+	]
+}
