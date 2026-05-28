@@ -19,11 +19,11 @@
 		},
 		{
 			"id": "stt_reazonspeech_v2",
-			"url": "https://github.com/ai-create-lab/charactor-assistant-assets/releases/download/v1.1.0/reazonspeech-nemo-v2.gguf",
+			"url": "https://github.com/ai-create-lab/charactor-assistant-assets/releases/download/v1.2.0/reazonspeech-nemo-v2.gguf",
 			"dest": "models/reazonspeech-nemo-v2.gguf",
-			"version": "2.0.0",
-			"size": 1238605568,
-			"sha256": "ac8f8291d4dd1c67d9370df64d3c4b1d50ad2a103e22a9140ab9fe9769cf1eb1"
+			"version": "2.1.0",
+			"size": 729906208,
+			"sha256": "056061f76540b8136db651f6e14d076818e50de667da06955f1d9295e0fc748d"
 		},
 		{
 			"id": "stt_reazonspeech_v2_tokenizer",
