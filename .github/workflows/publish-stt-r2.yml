@@ -1,0 +1,163 @@
+name: Publish STT model to R2
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub Release tag to read from
+        required: true
+        default: v1.2.0
+      asset_name:
+        description: Release asset filename
+        required: true
+        default: reazonspeech-nemo-v2-Q8_0.gguf
+      r2_key:
+        description: Destination R2 object key used by the app
+        required: true
+        default: models/reazonspeech-nemo-v2.gguf
+      expected_sha256:
+        description: Optional SHA256 guard. Leave empty to only report the computed value.
+        required: false
+        default: ""
+      expected_size:
+        description: Optional byte-size guard. Leave empty to only report the computed value.
+        required: false
+        default: ""
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  DEFAULT_R2_KEY: models/reazonspeech-nemo-v2.gguf
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Resolve release asset
+        id: asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          ASSET_NAME_INPUT: ${{ inputs.asset_name }}
+          R2_KEY_INPUT: ${{ inputs.r2_key }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            tag="${{ github.event.release.tag_name }}"
+            asset="$(gh release view "$tag" --json assets --jq '.assets[].name' \
+              | grep -E '^reazonspeech-nemo-v2.*\.gguf$' \
+              | sort -r \
+              | head -n 1)"
+            r2_key="$DEFAULT_R2_KEY"
+          else
+            tag="$RELEASE_TAG_INPUT"
+            asset="$ASSET_NAME_INPUT"
+            r2_key="$R2_KEY_INPUT"
+          fi
+
+          if [[ -z "$tag" || -z "$asset" || -z "$r2_key" ]]; then
+            echo "release_tag, asset_name, and r2_key are required" >&2
+            exit 1
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "asset=$asset"
+            echo "r2_key=$r2_key"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.asset.outputs.tag }}
+          ASSET_NAME: ${{ steps.asset.outputs.asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/stt-model
+          gh release download "$RELEASE_TAG" --pattern "$ASSET_NAME" --dir /tmp/stt-model
+          test -f "/tmp/stt-model/$ASSET_NAME"
+
+      - name: Verify asset
+        id: verify
+        env:
+          ASSET_NAME: ${{ steps.asset.outputs.asset }}
+          EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+          EXPECTED_SIZE: ${{ inputs.expected_size }}
+        run: |
+          set -euo pipefail
+          file="/tmp/stt-model/$ASSET_NAME"
+          sha="$(sha256sum "$file" | awk '{print $1}')"
+          size="$(stat -c%s "$file")"
+
+          if [[ -n "${EXPECTED_SHA256:-}" && "$sha" != "$EXPECTED_SHA256" ]]; then
+            echo "SHA256 mismatch: expected=$EXPECTED_SHA256 actual=$sha" >&2
+            exit 1
+          fi
+
+          if [[ -n "${EXPECTED_SIZE:-}" && "$size" != "$EXPECTED_SIZE" ]]; then
+            echo "size mismatch: expected=$EXPECTED_SIZE actual=$size" >&2
+            exit 1
+          fi
+
+          {
+            echo "sha256=$sha"
+            echo "size=$size"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_KEY: ${{ steps.asset.outputs.r2_key }}
+          ASSET_NAME: ${{ steps.asset.outputs.asset }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "/tmp/stt-model/$ASSET_NAME" "s3://$R2_BUCKET_NAME/$R2_KEY" \
+            --endpoint-url "$R2_S3_ENDPOINT" \
+            --content-type application/octet-stream \
+            --cache-control "public, max-age=31536000, immutable" \
+            --no-progress
+
+      - name: Confirm R2 object
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_KEY: ${{ steps.asset.outputs.r2_key }}
+        run: |
+          set -euo pipefail
+          aws s3api head-object \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "$R2_KEY" \
+            --endpoint-url "$R2_S3_ENDPOINT" \
+            --query '{ContentLength:ContentLength,ContentType:ContentType,CacheControl:CacheControl,ETag:ETag}' \
+            --output json
+
+      - name: Write manifest values
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## R2 publish complete
+
+          | Field | Value |
+          | --- | --- |
+          | release tag | \`${{ steps.asset.outputs.tag }}\` |
+          | release asset | \`${{ steps.asset.outputs.asset }}\` |
+          | R2 key | \`${{ steps.asset.outputs.r2_key }}\` |
+          | size | \`${{ steps.verify.outputs.size }}\` |
+          | sha256 | \`${{ steps.verify.outputs.sha256 }}\` |
+
+          Use these values in \`charactor-assistant/backend/workers/src/routes/assets.ts\` for \`stt_reazonspeech_v2\`, then deploy \`character-assistant-api\`.
+          EOF
