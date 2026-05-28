@@ -50,7 +50,7 @@ jobs:
 
           if [[ "${{ github.event_name }}" == "release" ]]; then
             tag="${{ github.event.release.tag_name }}"
-            asset="$(gh release view "$tag" --json assets --jq '.assets[].name' \
+            asset="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
               | grep -E '^reazonspeech-nemo-v2.*\.gguf$' \
               | sort -r \
               | head -n 1)"
@@ -80,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/stt-model
-          gh release download "$RELEASE_TAG" --pattern "$ASSET_NAME" --dir /tmp/stt-model
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET_NAME" --dir /tmp/stt-model
           test -f "/tmp/stt-model/$ASSET_NAME"
 
       - name: Verify asset
